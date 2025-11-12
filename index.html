@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>الفحص بالموافقة — اضغطي للموافقة</title>
+<style>
+  body{font-family:Arial,system-ui; background:#f8f9fb; margin:0; padding:20px; display:flex; align-items:center; justify-content:center; min-height:100vh}
+  .card{width:100%;max-width:520px;background:#fff;padding:18px;border-radius:12px;box-shadow:0 8px 30px rgba(10,10,10,.06);text-align:center}
+  h2{color:#333;margin:6px 0 12px}
+  p.small{color:#666;font-size:13px;margin-bottom:12px}
+  video, canvas{width:100%;border-radius:8px;background:#000;max-height:60vh;object-fit:cover}
+  .controls{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin-top:12px}
+  button{padding:10px 14px;border-radius:8px;border:1px solid #ddd;background:#fff;cursor:pointer}
+  button.primary{background:#ff6600;color:#fff;border-color:#ff6600}
+  a.hidden{display:none}
+</style>
+</head>
+<body>
+  <div class="card">
+    <h2>اضغطي ووافقي لالتقاط صورة</h2>
+    <p class="small">عشان يتم تشغيل الكاميرا لازم تعطي الموافقة. الصورة تُخزن محلياً أو تُرسل إذا ضفتي endpoint.</p>
+
+    <div id="starter">
+      <button id="startBtn" class="primary">فتح الكاميرا (موافق)</button>
+      <button id="consentInfo">ليش بحتاج موافقة؟</button>
+    </div>
+
+    <div id="previewWrap" style="display:none;margin-top:12px">
+      <video id="video" autoplay playsinline></video>
+      <canvas id="canvas" style="display:none"></canvas>
+      <div class="controls">
+        <button id="captureBtn">التقاط</button>
+        <a id="downloadBtn" class="hidden" download="selfie.png">تحميل الصورة</a>
+        <button id="sendBtn" disabled>إرسال للسيرفر (اختياري)</button>
+        <button id="stopBtn">إيقاف الكاميرا</button>
+      </div>
+    </div>
+
+    <p class="small" style="margin-top:12px">ملاحظة: لو بدك الصور توصل لجوجل شيت أو درايف استعملي Web App URL كـ <code>ENDPOINT_URL</code> في الكود.</p>
+  </div>
+
+<script>
+/* ====== عيّني الرابط هنا لو عندك ويب-آب جاهز ====== */
+const ENDPOINT_URL = ''; // مثال: 'https://script.google.com/macros/s/YOUR_ID/exec'
+// اتركيه فاضي لو ما بدك ترسلي الصور للسيرفر.
+
+const startBtn = document.getElementById('startBtn');
+const consentInfo = document.getElementById('consentInfo');
+const previewWrap = document.getElementById('previewWrap');
+const video = document.getElementById('video');
+const canvas = document.getElementById('canvas');
+const captureBtn = document.getElementById('captureBtn');
+const downloadBtn = document.getElementById('downloadBtn');
+const sendBtn = document.getElementById('sendBtn');
+const stopBtn = document.getElementById('stopBtn');
+
+let stream = null;
+
+consentInfo.addEventListener('click', () => {
+  alert('هالصفحة بتطلب موافقتك قبل تشغيل الكاميرا. الصورة ما تُرسل إلا بعد الضغط على "إرسال".');
+});
+
+startBtn.addEventListener('click', async () => {
+  // طلب موافقة واضحة
+  const ok = confirm('تأكدي: هل توافقين تشغيل الكاميرا الآن؟');
+  if (!ok) return alert('لا تشغيل بدون موافقتك.');
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" }, audio: false });
+    video.srcObject = stream;
+    previewWrap.style.display = 'block';
+    if (ENDPOINT_URL) sendBtn.disabled = false;
+  } catch (err) {
+    alert('فشل الوصول للكاميرا. تأكدي من السماح للمتصفح أو جربي من موبايل.');
+    console.error(err);
+  }
+});
+
+captureBtn.addEventListener('click', () => {
+  if (!stream) return alert('شغلي الكاميرا أولاً.');
+  const w = video.videoWidth || 640;
+  const h = video.videoHeight || 480;
+  canvas.width = w; canvas.height = h;
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(video, 0, 0, w, h);
+  const dataUrl = canvas.toDataURL('image/png');
+  downloadBtn.href = dataUrl;
+  downloadBtn.classList.remove('hidden');
+  downloadBtn.style.padding = '10px 12px';
+  if (ENDPOINT_URL) sendBtn.disabled = false;
+  alert('تم التقاط الصورة. تقدر تحمليها أو ترسليها للسيرفر.');
+});
+
+stopBtn.addEventListener('click', () => {
+  if (!stream) return;
+  stream.getTracks().forEach(t => t.stop());
+  stream = null;
+  previewWrap.style.display = 'none';
+  sendBtn.disabled = true;
+  downloadBtn.classList.add('hidden');
+});
+
+sendBtn.addEventListener('click', async () => {
+  if (!ENDPOINT_URL) return alert('ما في ENDPOINT معرف داخل الكود.');
+  try {
+    const dataUrl = canvas.toDataURL('image/png');
+    sendBtn.disabled = true; sendBtn.textContent = 'جاري الإرسال...';
+    const res = await fetch(ENDPOINT_URL, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ image: dataUrl, ua: navigator.userAgent, note: 'consented' })
+    });
+    const txt = await res.text().catch(()=>res.status);
+    alert('تم الإرسال. رد السيرفر: ' + txt);
+  } catch (err) {
+    alert('فشل الإرسال. تأكدي من أن ENDPOINT يعمل ويقبل POST.');
+    console.error(err);
+  } finally {
+    sendBtn.disabled = false; sendBtn.textContent = 'إرسال للسيرفر (اختياري)';
+  }
+});
+
+// منع المشكلة لو المتصفح ما يدعم
+if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+  alert('متصفحك لا يدعم تشغيل الكاميرا عبر الموقع. استخدمي متصفح حديث أو الجوال.');
+  startBtn.disabled = true;
+}
+</script>
+</body>
+</html>
